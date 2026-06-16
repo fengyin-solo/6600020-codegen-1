@@ -10,11 +10,23 @@ export interface ModbusRegister {
 export interface Device {
   id: string
   name: string
+  area: string
   ip: string
   port: number
   slaveId: number
   online: boolean
+  lastCollectTime: number
   registers: ModbusRegister[]
+}
+
+export interface AreaSummary {
+  area: string
+  total: number
+  online: number
+  offline: number
+  criticalAlarms: number
+  warningAlarms: number
+  lastCollectTime: number
 }
 
 export interface Alarm {

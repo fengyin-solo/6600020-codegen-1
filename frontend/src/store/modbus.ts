@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { Device, Alarm, ModbusRegister } from '../types'
+import type { Device, Alarm, ModbusRegister, AreaSummary } from '../types'
 
 export const useModbusStore = defineStore('modbus', () => {
   const devices = ref<Device[]>([])
@@ -9,40 +9,110 @@ export const useModbusStore = defineStore('modbus', () => {
   const isPolling = ref(false)
   const pollInterval = ref(1000)
   const selectedDevice = ref<Device | null>(null)
+  const selectedArea = ref<string | null>(null)
 
   const criticalAlarms = computed(() => alarms.value.filter(a => a.level === 'critical' && !a.acknowledged))
   const onlineDevices = computed(() => devices.value.filter(d => d.online))
 
+  const areas = computed(() => {
+    const set = new Set(devices.value.map(d => d.area))
+    return Array.from(set).sort()
+  })
+
+  const devicesByArea = computed(() => {
+    const map: Record<string, Device[]> = {}
+    for (const d of devices.value) {
+      if (!map[d.area]) map[d.area] = []
+      map[d.area].push(d)
+    }
+    return map
+  })
+
+  const areaSummaries = computed<AreaSummary[]>(() => {
+    return areas.value.map(area => {
+      const areaDevices = devicesByArea.value[area] || []
+      const online = areaDevices.filter(d => d.online).length
+      const areaDeviceIds = areaDevices.map(d => d.id)
+      const areaAlarms = alarms.value.filter(a => areaDeviceIds.includes(a.deviceId) && !a.acknowledged)
+      const criticalAlarms = areaAlarms.filter(a => a.level === 'critical').length
+      const warningAlarms = areaAlarms.filter(a => a.level === 'warning').length
+      const lastCollectTimes = areaDevices.map(d => d.lastCollectTime)
+      const lastCollectTime = lastCollectTimes.length > 0 ? Math.max(...lastCollectTimes) : 0
+      return {
+        area,
+        total: areaDevices.length,
+        online,
+        offline: areaDevices.length - online,
+        criticalAlarms,
+        warningAlarms,
+        lastCollectTime
+      }
+    })
+  })
+
+  const filteredDevices = computed(() => {
+    if (!selectedArea.value) return devices.value
+    return devices.value.filter(d => d.area === selectedArea.value)
+  })
+
   function initMockDevices() {
+    const now = Date.now()
     devices.value = [
       {
-        id: 'dev1', name: '温湿度传感器-A区', ip: '192.168.1.101', port: 502, slaveId: 1, online: true,
+        id: 'dev1', name: '温湿度传感器-1号', area: 'A区', ip: '192.168.1.101', port: 502, slaveId: 1, online: true, lastCollectTime: now,
         registers: [
-          { address: 0, name: '温度', type: 'holding', value: 25.6, unit: '°C', updatedAt: Date.now() },
-          { address: 1, name: '湿度', type: 'holding', value: 62.3, unit: '%RH', updatedAt: Date.now() },
-          { address: 2, name: '露点', type: 'holding', value: 17.8, unit: '°C', updatedAt: Date.now() },
+          { address: 0, name: '温度', type: 'holding', value: 25.6, unit: '°C', updatedAt: now },
+          { address: 1, name: '湿度', type: 'holding', value: 62.3, unit: '%RH', updatedAt: now },
+          { address: 2, name: '露点', type: 'holding', value: 17.8, unit: '°C', updatedAt: now },
         ]
       },
       {
-        id: 'dev2', name: '压力变送器-B区', ip: '192.168.1.102', port: 502, slaveId: 2, online: true,
+        id: 'dev2', name: '压力变送器-1号', area: 'B区', ip: '192.168.1.102', port: 502, slaveId: 2, online: true, lastCollectTime: now,
         registers: [
-          { address: 0, name: '管道压力', type: 'holding', value: 3.45, unit: 'MPa', updatedAt: Date.now() },
-          { address: 1, name: '差压', type: 'holding', value: 0.12, unit: 'kPa', updatedAt: Date.now() },
+          { address: 0, name: '管道压力', type: 'holding', value: 3.45, unit: 'MPa', updatedAt: now },
+          { address: 1, name: '差压', type: 'holding', value: 0.12, unit: 'kPa', updatedAt: now },
         ]
       },
       {
-        id: 'dev3', name: '电机控制器-C区', ip: '192.168.1.103', port: 502, slaveId: 3, online: false,
+        id: 'dev3', name: '电机控制器-1号', area: 'C区', ip: '192.168.1.103', port: 502, slaveId: 3, online: false, lastCollectTime: now - 300000,
         registers: [
-          { address: 0, name: '转速', type: 'holding', value: 1480, unit: 'RPM', updatedAt: Date.now() },
-          { address: 1, name: '电流', type: 'holding', value: 12.5, unit: 'A', updatedAt: Date.now() },
-          { address: 2, name: '运行状态', type: 'coil', value: true, unit: '', updatedAt: Date.now() },
+          { address: 0, name: '转速', type: 'holding', value: 1480, unit: 'RPM', updatedAt: now - 300000 },
+          { address: 1, name: '电流', type: 'holding', value: 12.5, unit: 'A', updatedAt: now - 300000 },
+          { address: 2, name: '运行状态', type: 'coil', value: true, unit: '', updatedAt: now - 300000 },
         ]
       },
       {
-        id: 'dev4', name: '流量计-D区', ip: '192.168.1.104', port: 502, slaveId: 4, online: true,
+        id: 'dev4', name: '流量计-1号', area: 'D区', ip: '192.168.1.104', port: 502, slaveId: 4, online: true, lastCollectTime: now,
         registers: [
-          { address: 0, name: '瞬时流量', type: 'holding', value: 156.7, unit: 'L/min', updatedAt: Date.now() },
-          { address: 1, name: '累计流量', type: 'holding', value: 98234, unit: 'L', updatedAt: Date.now() },
+          { address: 0, name: '瞬时流量', type: 'holding', value: 156.7, unit: 'L/min', updatedAt: now },
+          { address: 1, name: '累计流量', type: 'holding', value: 98234, unit: 'L', updatedAt: now },
+        ]
+      },
+      {
+        id: 'dev5', name: '温湿度传感器-2号', area: 'A区', ip: '192.168.1.105', port: 502, slaveId: 5, online: true, lastCollectTime: now,
+        registers: [
+          { address: 0, name: '温度', type: 'holding', value: 27.1, unit: '°C', updatedAt: now },
+          { address: 1, name: '湿度', type: 'holding', value: 58.7, unit: '%RH', updatedAt: now },
+        ]
+      },
+      {
+        id: 'dev6', name: '压力变送器-2号', area: 'B区', ip: '192.168.1.106', port: 502, slaveId: 6, online: true, lastCollectTime: now,
+        registers: [
+          { address: 0, name: '管道压力', type: 'holding', value: 2.89, unit: 'MPa', updatedAt: now },
+        ]
+      },
+      {
+        id: 'dev7', name: '电机控制器-2号', area: 'C区', ip: '192.168.1.107', port: 502, slaveId: 7, online: true, lastCollectTime: now,
+        registers: [
+          { address: 0, name: '转速', type: 'holding', value: 2960, unit: 'RPM', updatedAt: now },
+          { address: 1, name: '电流', type: 'holding', value: 8.3, unit: 'A', updatedAt: now },
+        ]
+      },
+      {
+        id: 'dev8', name: '阀门控制器', area: 'A区', ip: '192.168.1.108', port: 502, slaveId: 8, online: true, lastCollectTime: now,
+        registers: [
+          { address: 0, name: '阀门开度', type: 'holding', value: 75.5, unit: '%', updatedAt: now },
+          { address: 1, name: '开关状态', type: 'coil', value: true, unit: '', updatedAt: now },
         ]
       },
     ]
@@ -50,8 +120,10 @@ export const useModbusStore = defineStore('modbus', () => {
   }
 
   function simulatePoll() {
+    const now = Date.now()
     for (const dev of devices.value) {
       if (!dev.online) continue
+      dev.lastCollectTime = now
       for (const reg of dev.registers) {
         if (typeof reg.value === 'number') {
           const noise = (Math.random() - 0.5) * reg.value * 0.02
@@ -91,8 +163,8 @@ export const useModbusStore = defineStore('modbus', () => {
   }
 
   return {
-    devices, alarms, historyData, isPolling, pollInterval, selectedDevice,
-    criticalAlarms, onlineDevices,
+    devices, alarms, historyData, isPolling, pollInterval, selectedDevice, selectedArea,
+    criticalAlarms, onlineDevices, areas, devicesByArea, areaSummaries, filteredDevices,
     initMockDevices, simulatePoll, acknowledgeAlarm, toggleDevice
   }
 })
