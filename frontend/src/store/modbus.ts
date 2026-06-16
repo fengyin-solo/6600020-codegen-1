@@ -1,6 +1,26 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Device, Alarm, ModbusRegister, AreaSummary } from '../types'
+
+const STORAGE_KEY_AREA = 'modbus_selected_area'
+const STORAGE_KEY_DEVICE = 'modbus_selected_device_id'
+
+function loadFromStorage<T>(key: string, defaultValue: T): T {
+  try {
+    const stored = localStorage.getItem(key)
+    return stored ? JSON.parse(stored) : defaultValue
+  } catch {
+    return defaultValue
+  }
+}
+
+function saveToStorage<T>(key: string, value: T) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // ignore
+  }
+}
 
 export const useModbusStore = defineStore('modbus', () => {
   const devices = ref<Device[]>([])
@@ -9,7 +29,8 @@ export const useModbusStore = defineStore('modbus', () => {
   const isPolling = ref(false)
   const pollInterval = ref(1000)
   const selectedDevice = ref<Device | null>(null)
-  const selectedArea = ref<string | null>(null)
+  const selectedArea = ref<string | null>(loadFromStorage(STORAGE_KEY_AREA, null))
+  const savedDeviceId = ref<string | null>(loadFromStorage(STORAGE_KEY_DEVICE, null))
 
   const criticalAlarms = computed(() => alarms.value.filter(a => a.level === 'critical' && !a.acknowledged))
   const onlineDevices = computed(() => devices.value.filter(d => d.online))
@@ -116,8 +137,23 @@ export const useModbusStore = defineStore('modbus', () => {
         ]
       },
     ]
-    selectedDevice.value = devices.value[0]
+    if (savedDeviceId.value) {
+      const savedDevice = devices.value.find(d => d.id === savedDeviceId.value)
+      selectedDevice.value = savedDevice || devices.value[0]
+    } else {
+      selectedDevice.value = devices.value[0]
+    }
   }
+
+  watch(selectedArea, (newVal) => {
+    saveToStorage(STORAGE_KEY_AREA, newVal)
+  })
+
+  watch(selectedDevice, (newVal) => {
+    if (newVal) {
+      saveToStorage(STORAGE_KEY_DEVICE, newVal.id)
+    }
+  })
 
   function simulatePoll() {
     const now = Date.now()

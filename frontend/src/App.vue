@@ -104,10 +104,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useModbusStore } from './store/modbus'
 import TrendChart from './components/TrendChart.vue'
 import DeviceTopology from './components/DeviceTopology.vue'
+
+const STORAGE_KEY_TAB = 'modbus_active_tab'
+
+function loadTabFromStorage(): string {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_TAB)
+    return stored || 'topology'
+  } catch {
+    return 'topology'
+  }
+}
 
 const store = useModbusStore()
 let timer: number | null = null
@@ -116,7 +127,15 @@ const tabs = [
   { key: 'monitor', label: '实时监控' },
   { key: 'topology', label: '设备拓扑' }
 ]
-const activeTab = ref('topology')
+const activeTab = ref(loadTabFromStorage())
+
+watch(activeTab, (newVal) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_TAB, newVal)
+  } catch {
+    // ignore
+  }
+})
 
 function startPoll() {
   store.isPolling = true
